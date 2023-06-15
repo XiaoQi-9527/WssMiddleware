@@ -9,7 +9,6 @@ from loguru import logger as log
 
 from Objects import Depth, KLine
 from Constants import Hosts
-from Functools import MyDatetime
 from Templates import WssTemplate, ToSub
 
 

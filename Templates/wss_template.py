@@ -53,7 +53,7 @@ class WssTemplate(WebsocketClient):
 
     @staticmethod
     def add_time(val: dict, dt=None):
-        val["update_ts"] = MyDatetime.dt2ts(dt, thousand=True),
+        val["update_ts"] = MyDatetime.dt2ts(dt, thousand=True)
         val["update_dt"] = MyDatetime.dt2str(dt)
         return val
 
