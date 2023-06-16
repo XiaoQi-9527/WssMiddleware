@@ -15,6 +15,7 @@ class MyAioredis:
     def __init__(self, db: int = 0):
         self._pool = ConnectionPool(
             max_connections=cfg.REDIS.max_connections,
+            host=cfg.REDIS.host,
             port=cfg.REDIS.port,
             db=db,
             password=cfg.REDIS.password,
