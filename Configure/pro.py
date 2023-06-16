@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Mysql:
-    host: str = "127.0.0.1"
+    host: str = "10.9.10.123"
     port: int = 3306
     user: str = "root"
     password: str = "lbk369"
@@ -21,7 +21,7 @@ class Mysql:
 
 @dataclass(frozen=True)
 class Redis:
-    host: str = "127.0.0.1"
+    host: str = "10.9.10.123"
     port: int = 6379
     password: str = "lbk369"
     max_connections: int = 500
