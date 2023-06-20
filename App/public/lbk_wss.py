@@ -72,12 +72,20 @@ class LbkWssPublic(WssTemplate):
             depth: dict = data.get("depth", {})
             if not depth:
                 return
+            bid: list = depth.get("bids", [[0, 0]])[0]
+            ask: list = depth.get("asks", [[0, 0]])[0]
             self.symbol_last_depth[symbol] = {
-                "bids": self._init4depth(depth.get("bids", [])),
-                "asks": self._init4depth(depth.get("asks", [])),
+                "depth": {
+                    # "bids": self._init4depth(depth.get("bids", [])),
+                    # "asks": self._init4depth(depth.get("asks", [])),
+                    "bids": {"price": float(bid[0]), "amount": float(bid[1])},
+                    "asks": {"price": float(ask[0]), "amount": float(ask[1])},
+                }
             }
         except Exception as e:
             log.warning(f"depth err: {e}, data: {data}")
+        else:
+            del bid, ask
         finally:
             del symbol, depth
 

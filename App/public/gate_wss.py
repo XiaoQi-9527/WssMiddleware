@@ -79,14 +79,20 @@ class GateWssPublic(WssTemplate):
             if not depth:
                 return
             symbol: str = self.symbol_mapping[depth["s"]].upper()
+            bid: list = depth.get("bids", [[0, 0]])[0]
+            ask: list = depth.get("asks", [[0, 0]])[0]
             self.symbol_last_depth[symbol] = {
-                "bids": self._init4depth(depth.get("bids", [])),
-                "asks": self._init4depth(depth.get("asks", [])),
+                "depth": {
+                    # "bids": self._init4depth(depth.get("bids", [])),
+                    # "asks": self._init4depth(depth.get("asks", [])),
+                    "bids": {"price": float(bid[0]), "amount": float(bid[1])},
+                    "asks": {"price": float(ask[0]), "amount": float(ask[1])},
+                }
             }
         except Exception as e:
             log.warning(f"depth err: {e}, data: {data}")
         else:
-            del symbol
+            del symbol, bid, ask
         finally:
             del depth
 

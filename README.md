@@ -10,24 +10,12 @@ key = "exchange".lower()
 value = {
     "depth": {
         "bids": {
-            "1": {
-                "price": 1.0,       # 委托价
-                "amount": 100.01,   # 委托数量
-            },
-            "2": {
-                "price": 1.2,
-                "amount": 100.02,
-            },
+            "price": 1.0,       # 委托价
+            "amount": 100.01,   # 委托数量
         },
         "asks": {
-            "1": {
-                "price": 0.9,
-                "amount": 100.09,
-            },
-            "2": {
-                "price": 1.8,
-                "amount": 100.09,
-            },
+            "price": 0.9,
+            "amount": 100.09,
         }
     },
     "update_ts": 1686809977793,
