@@ -67,7 +67,7 @@ class WssTemplate(WebsocketClient):
                         last_depth = self.symbol_last_depth.copy()
                         task1 = [
                             conn.hset(
-                                name=f"EXCHANGE-SPOT-WSS-DEPTH-{symbol}",
+                                name=f"EXCHANGE-SPOT-WSS-DEPTH-{symbol}".upper(),
                                 key=self.exchange,
                                 value=self.add_time(value, dt)
                             )
@@ -76,7 +76,7 @@ class WssTemplate(WebsocketClient):
                         last_kline = self.symbol_last_kline.copy()
                         task2 = [
                             conn.hset(
-                                name=f"EXCHANGE-SPOT-WSS-KLINE-{symbol}",
+                                name=f"EXCHANGE-SPOT-WSS-KLINE-{symbol}".upper(),
                                 key=self.exchange,
                                 value=self.add_time(value, dt)
                             )

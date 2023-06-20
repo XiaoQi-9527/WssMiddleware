@@ -18,11 +18,11 @@ class OkexWssPublic(WssTemplate):
         super().__init__()
 
         # constants
-        self.url: str = Hosts.LBK.data_wss
+        self.url: str = Hosts.OKEX.data_wss
         self.exchange: str = "okex"
 
     def init_symbol(self, symbol: str):
-        new_symbol = symbol.replace("_", "").upper()
+        new_symbol = symbol.replace("_", "-").upper()
         self.symbol_mapping[new_symbol] = symbol
         return new_symbol
 
@@ -51,11 +51,11 @@ class OkexWssPublic(WssTemplate):
     async def on_packet(self, data: dict):
         if "event" in data.keys():
             return await self.on_check(data)
-        channel: str = data.get("args", {}).get("channel", "")
+        channel: str = data.get("arg", {}).get("channel", "")
         if channel.startswith("books"):
-            await self.on_depth(data)
+            self.loop.create_task(self.on_depth(data))
         elif channel.startswith("candle"):
-            await self.on_kline(data)
+            self.loop.create_task(self.on_kline(data))
         del channel
 
     async def on_check(self, data: dict):
@@ -67,12 +67,12 @@ class OkexWssPublic(WssTemplate):
 
     async def on_depth(self, data: dict):
         try:
-            symbol: str = self.symbol_mapping[data.get("args", {}).get("instId", "").upper()]
+            symbol: str = self.symbol_mapping[data.get("arg", {}).get("instId", "").upper()]
             depth: dict = data.get("data", [{}])[0]
             if not depth:
                 return
-            bid: list = depth.get("bids", [[0, 0]])[0]
-            ask: list = depth.get("asks", [[0, 0]])[0]
+            bid: list = depth.get("bids", [[0, 0, 0, 0]])[0]
+            ask: list = depth.get("asks", [[0, 0, 0, 0]])[0]
             self.symbol_last_depth[symbol] = {
                 "depth": {
                     # "bids": self._init4depth(depth.get("bids", [])),
@@ -90,7 +90,7 @@ class OkexWssPublic(WssTemplate):
 
     async def on_kline(self, data: dict):
         try:
-            symbol: str = self.symbol_mapping[data.get("args", {}).get("instId", "").upper()]
+            symbol: str = self.symbol_mapping[data.get("arg", {}).get("instId", "").upper()]
             kline: list = data.get("data", [[]])[0]
             if not kline:
                 return

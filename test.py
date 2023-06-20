@@ -31,13 +31,15 @@ class Test:
              'slp_usdt', 'snx_usdt', 'stx_usdt', 'sushi_usdt', 'syn_usdt', 'tomo_usdt', 'trx_btc', 'trx_eth',
              'trx_usdt', 'tvk_usdt', 'ustc_busd', 'utk_usdt', 'vgx_usdt', 'voxel_usdt', 'waxp_usdt', 'win_usdt',
              'woo_usdt', 'xrp_btc']
-        a = ["phb_busd"]
+        # a = ["phb_busd"]
+        # a = ["bch_usdt", "core_usdt", "crv_usdc", "ethw_usdt", "shib_usdc"]
+        # a = ["dzoo_usdt", "elon_usdt", "ht_usdt", "mc_usdt", "nest_usdt"]
 
         ts = []
         for symbol in a:
             ts.append({
                 "symbol": symbol,
-                "exchange": "binance",
+                "exchange": "lbank",
                 "type": "spot",
                 "status": True,
                 "business": "depth",
