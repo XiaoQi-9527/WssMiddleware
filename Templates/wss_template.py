@@ -37,6 +37,7 @@ class WssTemplate(WebsocketClient):
         self.type: str = "spot"
         self.url: str = ""
         self.exchange: str = ""
+        self.to_subscribe: Dict[str, ToSub] = {}
         self.symbol_mapping: Dict[str, str] = {}  # 币对对照表
 
         self.symbol_last_depth: dict = {}
@@ -97,7 +98,7 @@ class WssTemplate(WebsocketClient):
                 del conn
                 await sleep(1)
 
-    async def get_data_from_mysql(self) -> List[ToSub]:
+    async def get_data_from_mysql(self):
         try:
             sql = SubscribeConfigModel.select(
                 SubscribeConfigModel.id,
@@ -111,41 +112,41 @@ class WssTemplate(WebsocketClient):
                 (SubscribeConfigModel.type == self.type)
             )
             query = await self.subscribe_cfg_model.object.execute(sql.dicts())
+            self.to_subscribe = {v.symbol: v for v in map(lambda x: ToSub(**x), query)}
         except Exception as e:
             log.warning(f"get_data_from_mysql, err: {e}")
-            return []
         else:
-            return list(map(lambda x: ToSub(**x), query))
+            del sql, query
         finally:
             pass
 
     async def on_task(self):
         try:
-            to_sub = await self.get_data_from_mysql()
-            for item in to_sub:
+            await self.get_data_from_mysql()
+            for symbol, item in self.to_subscribe.items():
                 try:
                     if "depth" in item.business:
                         if item.status:
-                            if item.symbol not in self.current_subscribe_depth:
+                            if symbol not in self.current_subscribe_depth:
                                 await self.subscribe_depth(item)
-                                self.current_subscribe_depth.append(item.symbol)
-                                log.info(f"current_sub_depth, id: {item.id}, symbol: {item.symbol}")
+                                self.current_subscribe_depth.append(symbol)
+                                log.info(f"current_sub_depth, id: {item.id}, symbol: {symbol}")
                         else:
-                            if item.symbol in self.current_subscribe_depth:
+                            if symbol in self.current_subscribe_depth:
                                 await self.subscribe_depth(item)
-                                self.current_subscribe_depth.remove(item.symbol)
+                                self.current_subscribe_depth.remove(symbol)
                     if "kline" in item.business:
                         if item.status:
-                            if item.symbol not in self.current_subscribe_kline:
+                            if symbol not in self.current_subscribe_kline:
                                 await self.subscribe_kline(item)
-                                self.current_subscribe_kline.append(item.symbol)
-                                log.info(f"current_sub_kline, id: {item.id}, symbol: {item.symbol}")
+                                self.current_subscribe_kline.append(symbol)
+                                log.info(f"current_sub_kline, id: {item.id}, symbol: {symbol}")
                         else:
-                            if item.symbol in self.current_subscribe_kline:
+                            if symbol in self.current_subscribe_kline:
                                 await self.subscribe_kline(item)
-                                self.current_subscribe_kline.remove(item.symbol)
+                                self.current_subscribe_kline.remove(symbol)
                 except Exception as e:
-                    log.warning(f"订阅处理, symbol: {item.symbol}, err: {e}")
+                    log.warning(f"订阅处理, symbol: {symbol}, err: {e}")
                 finally:
                     await sleep(0.2)
             log.info(f"current_sub_depth_length: {len(self.current_subscribe_depth)}")
@@ -153,7 +154,6 @@ class WssTemplate(WebsocketClient):
         except Exception as e:
             log.warning(f"on_task, err: {e}")
         else:
-            del to_sub
             log.info(f"on_task, ok")
         finally:
             pass

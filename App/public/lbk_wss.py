@@ -7,6 +7,8 @@ sys.path.append("/root/WssMiddleware")
 
 from loguru import logger as log
 
+from asyncio import sleep
+
 from Objects import Depth, KLine
 from Constants import Hosts
 from Templates import WssTemplate, ToSub
@@ -56,11 +58,25 @@ class LbkWssPublic(WssTemplate):
         del _type
 
     async def on_check(self, data: dict):
-        pass
+        symbol = data.get("message", "").split(":")[-1].replace("[", "").replace("]", "")
+        log.warning(f"subscribe, symbol: {symbol}, err: {data}")
+        item: ToSub = self.to_subscribe[symbol]
+        if "depth" in item.business:
+            self.current_subscribe_depth.remove(symbol)
+            log.info(f"on_check, depth, 重新订阅异常币对: {symbol}")
+        if "kline" in item.business:
+            self.current_subscribe_kline.remove(symbol)
+            log.info(f"on_check, kline, 重新订阅异常币对: {symbol}")
+        del symbol, item
 
-    async def on_ping(self, data: dict):
-        log.info(f"ping: {data}")
-        await self.send_packet({"action": "pong", "pong": data["ping"]})
+    async def on_ping(self, data: dict = None):
+        if not data:
+            msg = {"action": "ping", "ping": "ping.pong"}
+            log.info(f"ping: {msg}")
+        else:
+            msg = {"action": "pong", "pong": data["ping"]}
+            log.info(f"pong: {data}")
+        await self.send_packet(msg)
 
     @staticmethod
     def _init4depth(lst: list) -> dict:
@@ -110,6 +126,19 @@ class LbkWssPublic(WssTemplate):
             log.warning(f"kline err: {e}, data: {data}")
         finally:
             del symbol, kline
+
+    async def ping(self):
+        while True:
+            await sleep(10)
+            await self.on_ping()
+
+    def run(self):
+        self.loop.run_until_complete(self.on_first())
+        self.loop.create_task(self.on_timer())
+        self.loop.create_task(self.on_cache())
+        self.loop.create_task(self.subscribe(url=self.url))
+        self.loop.create_task(self.ping())
+        self.loop.run_forever()
 
 
 if __name__ == "__main__":

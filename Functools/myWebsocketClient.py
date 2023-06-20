@@ -33,7 +33,10 @@ class WebsocketClient:
         raise NotImplementedError
 
     async def send_packet(self, data: dict):
-        await self._ws.send_str(dumps(data))
+        try:
+            await self._ws.send_str(dumps(data))
+        except Exception as e:
+            log.warning(f"send_packet, err: {e}")
 
     async def subscribe(self, url: str):
         while True:

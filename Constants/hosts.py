@@ -28,12 +28,12 @@ class OKEX:
 
 @dataclass(frozen=True)
 class LBK:
-    # rest: str = "http://10.10.10.85:99/v2/"
-    # trade_wss: str = "ws://10.10.10.85:99/ws/V2/"
-    # data_wss: str = "ws://10.10.10.85:99/ws/V2/"
-    rest: str = "https://www.lbkex.net/v2/"
-    trade_wss: str = "wss://www.lbkex.net/ws/V2/"
-    data_wss: str = "wss://www.lbkex.net/ws/V2/"
+    rest: str = "http://10.10.10.85:99/v2/"
+    trade_wss: str = "ws://10.10.10.85:99/ws/V2/"
+    data_wss: str = "ws://10.10.10.85:99/ws/V2/"
+    # rest: str = "https://www.lbkex.net/v2/"
+    # trade_wss: str = "wss://www.lbkex.net/ws/V2/"
+    # data_wss: str = "wss://www.lbkex.net/ws/V2/"
 
 
 @dataclass(frozen=True)
