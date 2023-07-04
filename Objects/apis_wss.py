@@ -26,5 +26,18 @@ KLine = namedtuple(
 )
 
 
+Ticker = namedtuple(
+    "Ticker",
+    (
+        "high",             # 24hr最高价
+        "low",              # 24hr最低价
+        "volume",           # 24hr成交量
+        "quote",            # 24hr成交额
+        "latest_price",     # 最新成交价
+        "timestamp",        # 更新时间
+    )
+)
+
+
 if __name__ == "__main__":
     pass

@@ -42,9 +42,11 @@ class WssTemplate(WebsocketClient):
 
         self.symbol_last_depth: dict = {}
         self.symbol_last_kline: dict = {}
+        self.symbol_last_ticker: dict = {}
 
         self.current_subscribe_depth: list = []
         self.current_subscribe_kline: list = []
+        self.current_subscribe_ticker: list = []
 
     async def init_redis_conn(self, db: int = 0):
         self.redis_conn = await self.redis_pool.open(db=db)
@@ -83,12 +85,21 @@ class WssTemplate(WebsocketClient):
                             )
                             for symbol, value in last_kline.items()
                         ]
-                        await gather(*task1, *task2)
+                        last_ticker = self.symbol_last_ticker.copy()
+                        task3 = [
+                            conn.hset(
+                                name=f"EXCHANGE-SPOT-WSS-TICKER-{symbol}".upper(),
+                                key=self.exchange,
+                                value=self.add_time(value, dt)
+                            )
+                            for symbol, value in last_ticker.items()
+                        ]
+                        await gather(*task1, *task2, *task3)
                     except Exception as e:
                         log.warning(f"set_value, err: {e}")
                         raise e
                     else:
-                        del dt, last_depth, last_kline, task1, task2
+                        del dt, last_depth, last_kline, last_ticker, task1, task2, task3
                     finally:
                         await sleep(0.5)
             except Exception as e:
@@ -131,26 +142,43 @@ class WssTemplate(WebsocketClient):
                                 await self.subscribe_depth(item)
                                 self.current_subscribe_depth.append(symbol)
                                 log.info(f"current_sub_depth, id: {item.id}, symbol: {symbol}")
+                                await sleep(0.2)
                         else:
                             if symbol in self.current_subscribe_depth:
                                 await self.subscribe_depth(item)
                                 self.current_subscribe_depth.remove(symbol)
+                                await sleep(0.2)
                     if "kline" in item.business:
                         if item.status:
                             if symbol not in self.current_subscribe_kline:
                                 await self.subscribe_kline(item)
                                 self.current_subscribe_kline.append(symbol)
                                 log.info(f"current_sub_kline, id: {item.id}, symbol: {symbol}")
+                                await sleep(0.2)
                         else:
                             if symbol in self.current_subscribe_kline:
                                 await self.subscribe_kline(item)
                                 self.current_subscribe_kline.remove(symbol)
+                                await sleep(0.2)
+                    if "ticker" in item.business:
+                        if item.status:
+                            if symbol not in self.current_subscribe_ticker:
+                                await self.subscribe_ticker(item)
+                                self.current_subscribe_ticker.append(symbol)
+                                log.info(f"current_sub_ticker, id: {item.id}, symbol: {symbol}")
+                                await sleep(0.2)
+                        else:
+                            if symbol in self.current_subscribe_ticker:
+                                await self.subscribe_ticker(item)
+                                self.current_subscribe_ticker.remove(symbol)
+                                await sleep(0.2)
                 except Exception as e:
                     log.warning(f"订阅处理, symbol: {symbol}, err: {e}")
                 finally:
                     await sleep(0.2)
-            log.info(f"current_sub_depth_length: {len(self.current_subscribe_depth)}")
-            log.info(f"current_sub_kline_length: {len(self.current_subscribe_kline)}")
+            log.info(f"current_depth_length: {len(self.current_subscribe_depth)}")
+            log.info(f"current_kline_length: {len(self.current_subscribe_kline)}")
+            log.info(f"current_ticker_length: {len(self.current_subscribe_ticker)}")
         except Exception as e:
             log.warning(f"on_task, err: {e}")
         else:
@@ -164,11 +192,15 @@ class WssTemplate(WebsocketClient):
     async def subscribe_kline(self, item: ToSub, interval: str = "1m"):
         raise NotImplementedError
 
+    async def subscribe_ticker(self, item: ToSub):
+        raise NotImplementedError
+
     async def on_connected(self):
         await self.redis_conn.close()
         await self.init_redis_conn()
         self.current_subscribe_depth = []
         self.current_subscribe_kline = []
+        self.current_subscribe_ticker = []
 
     async def on_first(self):
         await self.init_session()

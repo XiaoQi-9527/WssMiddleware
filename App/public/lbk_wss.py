@@ -9,8 +9,9 @@ from loguru import logger as log
 
 from asyncio import sleep
 
-from Objects import Depth, KLine
+from Objects import Depth, KLine, Ticker
 from Constants import Hosts
+from Functools import MyDatetime
 from Templates import WssTemplate, ToSub
 
 
@@ -43,6 +44,15 @@ class LbkWssPublic(WssTemplate):
         })
         del action
 
+    async def subscribe_ticker(self, item: ToSub):
+        action = "subscribe" if item.status else "unsubscribe"
+        await self.send_packet({
+            "action": action,
+            "subscribe": "tick",
+            "pair": item.symbol.lower()
+        })
+        del action
+
     async def on_packet(self, data: dict):
         if data.get("action", None) == "ping":
             return await self.on_ping(data)
@@ -50,9 +60,11 @@ class LbkWssPublic(WssTemplate):
             return await self.on_check(data)
         _type: str = data.get("type", None)
         if _type == "depth":
-            await self.on_depth(data)
+            self.loop.create_task(self.on_depth(data))
         elif _type == "kbar":
-            await self.on_kline(data)
+            self.loop.create_task(self.on_kline(data))
+        elif _type == "tick":
+            self.loop.create_task(self.on_ticker(data))
         else:
             pass
         del _type
@@ -67,6 +79,9 @@ class LbkWssPublic(WssTemplate):
         if "kline" in item.business:
             self.current_subscribe_kline.remove(symbol)
             log.info(f"on_check, kline, 重新订阅异常币对: {symbol}")
+        if "ticker" in item.business:
+            self.current_subscribe_ticker.remove(symbol)
+            log.info(f"on_check, ticker, 重新订阅异常币对: {symbol}")
         del symbol, item
 
     async def on_ping(self, data: dict = None):
@@ -126,6 +141,27 @@ class LbkWssPublic(WssTemplate):
             log.warning(f"kline err: {e}, data: {data}")
         finally:
             del symbol, kline
+
+    async def on_ticker(self, data: dict):
+        try:
+            symbol: str = data.get("pair", "").lower()
+            ticker: dict = data.get("tick", {})
+            if not ticker:
+                return
+            self.symbol_last_ticker[symbol] = {
+                "ticker": Ticker(
+                    high=float(ticker["high"]),
+                    low=float(ticker["low"]),
+                    volume=float(ticker["vol"]),
+                    quote=float(ticker["turnover"]),
+                    latest_price=float(ticker["latest"]),
+                    timestamp=MyDatetime.dt2ts(dt=MyDatetime.utc2dt(data["TS"]), thousand=True)
+                )._asdict()
+            }
+        except Exception as e:
+            log.warning(f"ticker err: {e}, data: {data}")
+        finally:
+            del symbol, ticker
 
     async def ping(self):
         while True:

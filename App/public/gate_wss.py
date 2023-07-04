@@ -9,7 +9,7 @@ from loguru import logger as log
 
 from asyncio import sleep
 
-from Objects import Depth, KLine
+from Objects import Depth, KLine, Ticker
 from Constants import Hosts
 from Functools import MyDatetime
 from Templates import WssTemplate, ToSub
@@ -53,6 +53,18 @@ class GateWssPublic(WssTemplate):
         })
         del action
 
+    async def subscribe_ticker(self, item: ToSub):
+        action = "subscribe" if item.status else "unsubscribe"
+        await self.send_packet({
+            "time": int(MyDatetime.timestamp()),
+            "channel": "spot.tickers",
+            "event": action,
+            "payload": [
+                self.init_symbol(item.symbol)
+            ]
+        })
+        del action
+
     async def on_packet(self, data: dict):
         event: str = data.get("event", "")
         if event == "subscribe":
@@ -63,6 +75,8 @@ class GateWssPublic(WssTemplate):
                 self.loop.create_task(self.on_depth(data))
             elif channel == "spot.candlesticks":
                 self.loop.create_task(self.on_kline(data))
+            elif channel == "spot.tickers":
+                self.loop.create_task(self.on_ticker(data))
             del channel
         del event
 
@@ -119,6 +133,29 @@ class GateWssPublic(WssTemplate):
             del symbol
         finally:
             del kline
+
+    async def on_ticker(self, data: dict):
+        try:
+            ticker: dict = data.get("result", {})
+            if not ticker:
+                return
+            symbol: str = self.symbol_mapping[ticker["currency_pair"]].upper()
+            self.symbol_last_ticker[symbol] = {
+                "ticker": Ticker(
+                    high=float(ticker["high_24h"]),
+                    low=float(ticker["low_24h"]),
+                    volume=float(ticker["base_volume"]),
+                    quote=float(ticker["quote_volume"]),
+                    latest_price=float(ticker["last"]),
+                    timestamp=int(data["time_ms"])
+                )._asdict()
+            }
+        except Exception as e:
+            log.warning(f"ticker err: {e}, data: {data}")
+        else:
+            del symbol
+        finally:
+            del ticker
 
     async def on_ping(self, data: dict = None):
         """

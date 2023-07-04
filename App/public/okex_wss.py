@@ -7,7 +7,7 @@ sys.path.append("/root/WssMiddleware")
 
 from loguru import logger as log
 
-from Objects import Depth, KLine
+from Objects import Depth, KLine, Ticker
 from Constants import Hosts
 from Templates import WssTemplate, ToSub
 
@@ -48,6 +48,17 @@ class OkexWssPublic(WssTemplate):
         })
         del action
 
+    async def subscribe_ticker(self, item: ToSub):
+        action = "subscribe" if item.status else "unsubscribe"
+        await self.send_packet({
+            "op": action,
+            "args": [{
+                "channel": "tickers",
+                "instId": self.init_symbol(item.symbol)
+            }]
+        })
+        del action
+
     async def on_packet(self, data: dict):
         if "event" in data.keys():
             return await self.on_check(data)
@@ -56,6 +67,8 @@ class OkexWssPublic(WssTemplate):
             self.loop.create_task(self.on_depth(data))
         elif channel.startswith("candle"):
             self.loop.create_task(self.on_kline(data))
+        elif channel.startswith("tickers"):
+            self.loop.create_task(self.on_ticker(data))
         del channel
 
     async def on_check(self, data: dict):
@@ -109,6 +122,27 @@ class OkexWssPublic(WssTemplate):
             log.warning(f"kline err: {e}, data: {data}")
         finally:
             del symbol, kline
+
+    async def on_ticker(self, data: dict):
+        try:
+            symbol: str = self.symbol_mapping[data.get("arg", {}).get("instId", "").upper()]
+            ticker: dict = data.get("data", [{}])[0]
+            if not ticker:
+                return
+            self.symbol_last_ticker[symbol] = {
+                "ticker": Ticker(
+                    high=float(ticker["high24h"]),
+                    low=float(ticker["low24h"]),
+                    volume=float(ticker["vol24h"]),
+                    quote=float(ticker["volCcy24h"]),
+                    latest_price=float(ticker["last"]),
+                    timestamp=int(ticker["ts"])
+                )._asdict()
+            }
+        except Exception as e:
+            log.warning(f"ticker err: {e}, data: {data}")
+        finally:
+            del symbol, ticker
 
 
 if __name__ == "__main__":

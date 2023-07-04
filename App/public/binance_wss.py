@@ -7,7 +7,7 @@ sys.path.append("/root/WssMiddleware")
 
 from loguru import logger as log
 
-from Objects import Depth, KLine
+from Objects import Depth, KLine, Ticker
 from Constants import Hosts
 from Templates import WssTemplate, ToSub
 
@@ -48,6 +48,17 @@ class BinanceWssPublic(WssTemplate):
         })
         del action
 
+    async def subscribe_ticker(self, item: ToSub):
+        action = "SUBSCRIBE" if item.status else "UNSUBSCRIBE"
+        await self.send_packet({
+            "method": action,
+            "params": [
+                f"{self.init_symbol(item.symbol)}@ticker"
+            ],
+            "id": item.id + 20000
+        })
+        del action
+
     async def on_packet(self, data: dict):
         if "id" in data.keys():
             return await self.on_check(data)
@@ -55,6 +66,8 @@ class BinanceWssPublic(WssTemplate):
             self.loop.create_task(self.on_depth(data))
         elif "kline" in data["stream"]:
             self.loop.create_task(self.on_kline(data))
+        elif "ticker" in data["stream"]:
+            self.loop.create_task(self.on_ticker(data))
 
     async def on_check(self, data: dict):
         pass
@@ -109,6 +122,28 @@ class BinanceWssPublic(WssTemplate):
             log.warning(f"kline err: {e}, data: {data}")
         finally:
             del symbol, kline
+
+    async def on_ticker(self, data: dict):
+        try:
+            symbol: str = self.symbol_mapping[data["stream"].split("@")[0].lower()].upper()
+            ticker: dict = data.get("data", {})
+            if not ticker:
+                return
+            self.symbol_last_ticker[symbol] = {
+                "ticker": Ticker(
+                    high=float(ticker["h"]),
+                    low=float(ticker["l"]),
+                    volume=float(ticker["v"]),
+                    quote=float(ticker["q"]),
+                    latest_price=float(ticker["c"]),
+                    timestamp=int(ticker["E"])
+                )._asdict()
+            }
+            # await self.redis_conn.hset(name=f"EXCHANGE-SPOT-WSS-TICKER-{symbol}", key=self.exchange, value=res)
+        except Exception as e:
+            log.warning(f"ticker err: {e}, data: {data}")
+        finally:
+            del symbol, ticker
 
 
 if __name__ == "__main__":
