@@ -24,6 +24,12 @@ class LbkWssPublic(WssTemplate):
         self.url: str = Hosts.LBK.data_wss
         self.exchange: str = "lbank"
 
+        self.err_dict: dict = {
+            "depth": [],
+            "kline": [],
+            "ticker": []
+        }
+
     async def subscribe_depth(self, item: ToSub, depth: int = 5):
         action = "subscribe" if item.status else "unsubscribe"
         await self.send_packet({
@@ -74,13 +80,25 @@ class LbkWssPublic(WssTemplate):
         log.warning(f"subscribe, symbol: {symbol}, err: {data}")
         item: ToSub = self.to_subscribe[symbol]
         if "depth" in item.business:
-            self.current_subscribe_depth.remove(symbol)
+            # self.err_dict["depth"].append(symbol)
+            try:
+                self.current_subscribe_depth.remove(symbol)
+            except ValueError:
+                pass
             log.info(f"on_check, depth, 重新订阅异常币对: {symbol}")
         if "kline" in item.business:
-            self.current_subscribe_kline.remove(symbol)
+            # self.err_dict["kline"].append(symbol)
+            try:
+                self.current_subscribe_kline.remove(symbol)
+            except ValueError:
+                pass
             log.info(f"on_check, kline, 重新订阅异常币对: {symbol}")
         if "ticker" in item.business:
-            self.current_subscribe_ticker.remove(symbol)
+            # self.err_dict["ticker"].append(symbol)
+            try:
+                self.current_subscribe_ticker.remove(symbol)
+            except ValueError:
+                pass
             log.info(f"on_check, ticker, 重新订阅异常币对: {symbol}")
         del symbol, item
 
@@ -92,6 +110,11 @@ class LbkWssPublic(WssTemplate):
             msg = {"action": "pong", "pong": data["ping"]}
             log.info(f"pong: {data}")
         await self.send_packet(msg)
+
+    async def ping(self):
+        while True:
+            await sleep(10)
+            await self.on_ping()
 
     @staticmethod
     def _init4depth(lst: list) -> dict:
@@ -162,11 +185,6 @@ class LbkWssPublic(WssTemplate):
             log.warning(f"ticker err: {e}, data: {data}")
         finally:
             del symbol, ticker
-
-    async def ping(self):
-        while True:
-            await sleep(10)
-            await self.on_ping()
 
     def run(self):
         self.loop.run_until_complete(self.on_first())
