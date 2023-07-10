@@ -76,31 +76,37 @@ class LbkWssPublic(WssTemplate):
         del _type
 
     async def on_check(self, data: dict):
-        symbol = data.get("message", "").split(":")[-1].replace("[", "").replace("]", "")
-        log.warning(f"subscribe, symbol: {symbol}, err: {data}")
-        item: ToSub = self.to_subscribe[symbol]
-        if "depth" in item.business:
-            # self.err_dict["depth"].append(symbol)
-            try:
-                self.current_subscribe_depth.remove(symbol)
-            except ValueError:
-                pass
-            log.info(f"on_check, depth, 重新订阅异常币对: {symbol}")
-        if "kline" in item.business:
-            # self.err_dict["kline"].append(symbol)
-            try:
-                self.current_subscribe_kline.remove(symbol)
-            except ValueError:
-                pass
-            log.info(f"on_check, kline, 重新订阅异常币对: {symbol}")
-        if "ticker" in item.business:
-            # self.err_dict["ticker"].append(symbol)
-            try:
-                self.current_subscribe_ticker.remove(symbol)
-            except ValueError:
-                pass
-            log.info(f"on_check, ticker, 重新订阅异常币对: {symbol}")
-        del symbol, item
+        try:
+            symbol = data.get("message", "").split(":")[-1].replace("[", "").replace("]", "")
+            log.warning(f"subscribe, symbol: {symbol}, err: {data}")
+            item: ToSub = self.to_subscribe[symbol]
+            if "depth" in item.business:
+                # self.err_dict["depth"].append(symbol)
+                try:
+                    self.current_subscribe_depth.remove(symbol)
+                except ValueError:
+                    pass
+                log.info(f"on_check, depth, 重新订阅异常币对: {symbol}")
+            if "kline" in item.business:
+                # self.err_dict["kline"].append(symbol)
+                try:
+                    self.current_subscribe_kline.remove(symbol)
+                except ValueError:
+                    pass
+                log.info(f"on_check, kline, 重新订阅异常币对: {symbol}")
+            if "ticker" in item.business:
+                # self.err_dict["ticker"].append(symbol)
+                try:
+                    self.current_subscribe_ticker.remove(symbol)
+                except ValueError:
+                    pass
+                log.info(f"on_check, ticker, 重新订阅异常币对: {symbol}")
+        except Exception as e:
+            log.warning(f"on_check, err: {e}")
+        else:
+            del symbol, item
+        finally:
+            pass
 
     async def on_ping(self, data: dict = None):
         if not data:
