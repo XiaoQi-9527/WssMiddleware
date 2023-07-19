@@ -7,7 +7,7 @@ sys.path.append("/root/WssMiddleware")
 
 from loguru import logger as log
 
-from Objects import Depth, KLine, Ticker
+from Objects import Depth, KLine, Trade, Ticker
 from Constants import Hosts
 from Templates import WssTemplate, ToSub
 
@@ -21,43 +21,34 @@ class OkexWssPublic(WssTemplate):
         self.url: str = Hosts.OKEX.data_wss
         self.exchange: str = "okex"
 
+        self.channel_map: dict = {
+            "depth": "books{depth}",        # depth: 5
+            "kline": "candle{interval}",    # interval: 1M
+            "trade": "trades",
+            "ticker": "tickers",
+        }
+
     def init_symbol(self, symbol: str):
         new_symbol = symbol.replace("_", "-").upper()
         self.symbol_mapping[new_symbol] = symbol
         return new_symbol
 
-    async def subscribe_depth(self, item: ToSub, depth: int = 5):
-        action = "subscribe" if item.status else "unsubscribe"
-        await self.send_packet({
-            "op": action,
+    async def subscribe_by_channel(self, channel: str, item: ToSub):
+        msg = {
+            "op": "subscribe" if item.status else "unsubscribe",
             "args": [{
-                "channel": f"books{depth}",
+                "channel": "",
                 "instId": self.init_symbol(item.symbol)
-            }]
-        })
-        del action
-
-    async def subscribe_kline(self, item: ToSub, interval: str = "1M"):
-        action = "subscribe" if item.status else "unsubscribe"
-        await self.send_packet({
-            "op": action,
-            "args": [{
-                "channel": f"candle{interval}",
-                "instId": self.init_symbol(item.symbol)
-            }]
-        })
-        del action
-
-    async def subscribe_ticker(self, item: ToSub):
-        action = "subscribe" if item.status else "unsubscribe"
-        await self.send_packet({
-            "op": action,
-            "args": [{
-                "channel": "tickers",
-                "instId": self.init_symbol(item.symbol)
-            }]
-        })
-        del action
+            }],
+        }
+        channel_string: str = self.channel_map[channel]
+        if channel == "depth":
+            channel_string = channel_string.format(depth=5)
+        elif channel == "kline":
+            channel_string = channel_string.format(interval="1M")
+        msg["args"][0]["channel"] = channel_string
+        await self.send_packet(msg)
+        del msg, channel_string
 
     async def on_packet(self, data: dict):
         if "event" in data.keys():
@@ -67,6 +58,8 @@ class OkexWssPublic(WssTemplate):
             self.loop.create_task(self.on_depth(data))
         elif channel.startswith("candle"):
             self.loop.create_task(self.on_kline(data))
+        elif channel.startswith("trades"):
+            self.loop.create_task(self.on_trade(data))
         elif channel.startswith("tickers"):
             self.loop.create_task(self.on_ticker(data))
         del channel
@@ -116,12 +109,33 @@ class OkexWssPublic(WssTemplate):
                     volume=float(kline[5]),
                     amount=float(kline[6]),
                     num=-1,
+                    timestamp=int(kline[0])
                 )._asdict()
             }
         except Exception as e:
             log.warning(f"kline err: {e}, data: {data}")
         finally:
             del symbol, kline
+
+    async def on_trade(self, data: dict):
+        try:
+            symbol: str = self.symbol_mapping[data.get("arg", {}).get("instId", "").upper()]
+            trade: dict = data.get("data", [{}])[0]
+            if not trade:
+                return
+            self.symbol_last_trade[symbol] = {
+                "trade": Trade(
+                    amount=float(trade["sz"]),
+                    price=float(trade["px"]),
+                    volume=float(trade["px"]) * float(trade["sz"]),
+                    direction=trade["side"],
+                    timestamp=trade["ts"],
+                )._asdict()
+            }
+        except Exception as e:
+            log.warning(f"trade err: {e}, data: {data}")
+        finally:
+            del symbol, trade
 
     async def on_ticker(self, data: dict):
         try:

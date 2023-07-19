@@ -15,16 +15,27 @@ Depth = namedtuple(
 KLine = namedtuple(
     "KLine",
     (
-        "open",     # 开
-        "high",     # 高
-        "low",      # 低
-        "close",    # 收
-        "volume",   # 成交量
-        "amount",   # 成交额
-        "num",      # 成交笔数
+        "open",         # 开
+        "high",         # 高
+        "low",          # 低
+        "close",        # 收
+        "volume",       # 成交量
+        "amount",       # 成交额
+        "num",          # 成交笔数
+        "timestamp",    # 成交时间
     )
 )
 
+Trade = namedtuple(
+    "Trade",
+    (
+        "amount",       # 成交数量
+        "price",        # 成交价格
+        "volume",       # 成交金额
+        "direction",    # 成交方向: sell | buy
+        "timestamp",    # 成交时间
+    )
+)
 
 Ticker = namedtuple(
     "Ticker",

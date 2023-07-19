@@ -26,7 +26,11 @@ class WssTemplate(WebsocketClient):
         # loop
         self.loop = get_event_loop()
 
+        # dt
+        self.MDT = MyDatetime
+
         # redis
+        self.redis_db: int = 1
         self.redis_pool = MyAioredis()
         self.redis_conn = conn
 
@@ -42,64 +46,55 @@ class WssTemplate(WebsocketClient):
 
         self.symbol_last_depth: dict = {}
         self.symbol_last_kline: dict = {}
+        self.symbol_last_trade: dict = {}
         self.symbol_last_ticker: dict = {}
 
         self.current_subscribe_depth: list = []
         self.current_subscribe_kline: list = []
+        self.current_subscribe_trade: list = []
         self.current_subscribe_ticker: list = []
 
-    async def init_redis_conn(self, db: int = 0):
-        self.redis_conn = await self.redis_pool.open(db=db)
+    async def init_redis_conn(self):
+        self.redis_conn = await self.redis_pool.open(db=self.redis_db)
 
     def init_symbol(self, symbol: str):
         raise NotImplementedError
 
-    @staticmethod
-    def add_time(val: dict, dt=None):
-        val["update_ts"] = MyDatetime.dt2ts(dt, thousand=True)
-        val["update_dt"] = MyDatetime.dt2str(dt)
+    def add_time(self, val: dict, dt=None):
+        val["update_ts"] = self.MDT.dt2ts(dt, thousand=True)
+        val["update_dt"] = self.MDT.dt2str(dt)
         return val
 
-    async def on_cache(self, db: int = 0):
+    def create_task_4_cache(self, conn, dt, task: str, data: dict):
+        if not data:
+            return []
+        return [
+            conn.hset(
+                name=f"EXCHANGE-SPOT-WSS-{task}-{symbol}".upper(),
+                key=self.exchange,
+                value=self.add_time(value, dt)
+            )
+            for symbol, value in data.items()
+        ]
+
+    async def on_cache(self):
         while True:
-            conn = await self.redis_pool.open(db=db)
+            conn = await self.redis_pool.open(db=self.redis_db)
             try:
                 while True:
                     try:
-                        dt = MyDatetime.now()
-                        last_depth = self.symbol_last_depth.copy()
-                        task1 = [
-                            conn.hset(
-                                name=f"EXCHANGE-SPOT-WSS-DEPTH-{symbol}".upper(),
-                                key=self.exchange,
-                                value=self.add_time(value, dt)
-                            )
-                            for symbol, value in last_depth.items()
-                        ]
-                        last_kline = self.symbol_last_kline.copy()
-                        task2 = [
-                            conn.hset(
-                                name=f"EXCHANGE-SPOT-WSS-KLINE-{symbol}".upper(),
-                                key=self.exchange,
-                                value=self.add_time(value, dt)
-                            )
-                            for symbol, value in last_kline.items()
-                        ]
-                        last_ticker = self.symbol_last_ticker.copy()
-                        task3 = [
-                            conn.hset(
-                                name=f"EXCHANGE-SPOT-WSS-TICKER-{symbol}".upper(),
-                                key=self.exchange,
-                                value=self.add_time(value, dt)
-                            )
-                            for symbol, value in last_ticker.items()
-                        ]
-                        await gather(*task1, *task2, *task3)
+                        dt = self.MDT.now()
+                        await gather(
+                            *self.create_task_4_cache(conn, dt, task="DEPTH", data=self.symbol_last_depth.copy()),
+                            *self.create_task_4_cache(conn, dt, task="KLINE", data=self.symbol_last_kline.copy()),
+                            *self.create_task_4_cache(conn, dt, task="TRADE", data=self.symbol_last_trade.copy()),
+                            *self.create_task_4_cache(conn, dt, task="TICKER", data=self.symbol_last_ticker.copy()),
+                        )
                     except Exception as e:
                         log.warning(f"set_value, err: {e}")
                         raise e
                     else:
-                        del dt, last_depth, last_kline, last_ticker, task1, task2, task3
+                        del dt
                     finally:
                         await sleep(0.5)
             except Exception as e:
@@ -131,68 +126,55 @@ class WssTemplate(WebsocketClient):
         finally:
             pass
 
+    async def switch_task_by_channel(self, channel: str, current_sub: list, symbol: str, item: ToSub):
+        if item.status:
+            if symbol not in current_sub:
+                await self.subscribe_by_channel(channel=channel, item=item)
+                current_sub.append(symbol)
+                log.info(f"current_sub_{channel}, id: {item.id}, symbol: {symbol}")
+                await sleep(0.2)
+        else:
+            if symbol in current_sub:
+                await self.subscribe_by_channel(channel, item)
+                current_sub.remove(symbol)
+                log.info(f"current_un_sub_{channel}, id: {item.id}, symbol: {symbol}")
+                await sleep(0.2)
+        return current_sub
+
     async def on_task(self):
         try:
             await self.get_data_from_mysql()
             for symbol, item in self.to_subscribe.items():
                 try:
                     if "depth" in item.business:
-                        if item.status:
-                            if symbol not in self.current_subscribe_depth:
-                                await self.subscribe_depth(item)
-                                self.current_subscribe_depth.append(symbol)
-                                log.info(f"current_sub_depth, id: {item.id}, symbol: {symbol}")
-                                await sleep(0.2)
-                        else:
-                            if symbol in self.current_subscribe_depth:
-                                await self.subscribe_depth(item)
-                                self.current_subscribe_depth.remove(symbol)
-                                await sleep(0.2)
+                        self.current_subscribe_depth = await self.switch_task_by_channel(
+                            channel="depth", current_sub=self.current_subscribe_depth, symbol=symbol, item=item
+                        )
                     if "kline" in item.business:
-                        if item.status:
-                            if symbol not in self.current_subscribe_kline:
-                                await self.subscribe_kline(item)
-                                self.current_subscribe_kline.append(symbol)
-                                log.info(f"current_sub_kline, id: {item.id}, symbol: {symbol}")
-                                await sleep(0.2)
-                        else:
-                            if symbol in self.current_subscribe_kline:
-                                await self.subscribe_kline(item)
-                                self.current_subscribe_kline.remove(symbol)
-                                await sleep(0.2)
+                        self.current_subscribe_kline = await self.switch_task_by_channel(
+                            channel="kline", current_sub=self.current_subscribe_kline, symbol=symbol, item=item
+                        )
+                    if "trade" in item.business:
+                        self.current_subscribe_trade = await self.switch_task_by_channel(
+                            channel="trade", current_sub=self.current_subscribe_trade, symbol=symbol, item=item
+                        )
                     if "ticker" in item.business:
-                        if item.status:
-                            if symbol not in self.current_subscribe_ticker:
-                                await self.subscribe_ticker(item)
-                                self.current_subscribe_ticker.append(symbol)
-                                log.info(f"current_sub_ticker, id: {item.id}, symbol: {symbol}")
-                                await sleep(0.2)
-                        else:
-                            if symbol in self.current_subscribe_ticker:
-                                await self.subscribe_ticker(item)
-                                self.current_subscribe_ticker.remove(symbol)
-                                await sleep(0.2)
+                        self.current_subscribe_ticker = await self.switch_task_by_channel(
+                            channel="ticker", current_sub=self.current_subscribe_ticker, symbol=symbol, item=item
+                        )
                 except Exception as e:
                     log.warning(f"订阅处理, symbol: {symbol}, err: {e}")
-                finally:
-                    await sleep(0.2)
-            log.info(f"current_depth_length: {len(self.current_subscribe_depth)}")
-            log.info(f"current_kline_length: {len(self.current_subscribe_kline)}")
-            log.info(f"current_ticker_length: {len(self.current_subscribe_ticker)}")
         except Exception as e:
             log.warning(f"on_task, err: {e}")
         else:
             log.info(f"on_task, ok")
         finally:
-            pass
+            log.info(f"current_depth_length: {len(self.current_subscribe_depth)}")
+            log.info(f"current_kline_length: {len(self.current_subscribe_kline)}")
+            log.info(f"current_trade_length: {len(self.current_subscribe_trade)}")
+            log.info(f"current_ticker_length: {len(self.current_subscribe_ticker)}")
 
-    async def subscribe_depth(self, item: ToSub, depth: int = 5):
-        raise NotImplementedError
-
-    async def subscribe_kline(self, item: ToSub, interval: str = "1m"):
-        raise NotImplementedError
-
-    async def subscribe_ticker(self, item: ToSub):
+    async def subscribe_by_channel(self, channel: str, item: ToSub):
         raise NotImplementedError
 
     async def on_connected(self):
@@ -200,6 +182,7 @@ class WssTemplate(WebsocketClient):
         await self.init_redis_conn()
         self.current_subscribe_depth = []
         self.current_subscribe_kline = []
+        self.current_subscribe_trade = []
         self.current_subscribe_ticker = []
 
     async def on_first(self):

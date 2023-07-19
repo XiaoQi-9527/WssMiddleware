@@ -9,9 +9,8 @@ from loguru import logger as log
 
 from asyncio import sleep
 
-from Objects import Depth, KLine, Ticker
+from Objects import Depth, KLine, Trade, Ticker
 from Constants import Hosts
-from Functools import MyDatetime
 from Templates import WssTemplate, ToSub
 
 
@@ -24,46 +23,37 @@ class GateWssPublic(WssTemplate):
         self.url: str = Hosts.GATE.data_wss
         self.exchange: str = "gate"
 
+        self.channel_map: dict = {
+            "depth": "spot.order_book",     # depth: 5
+            "kline": "spot.candlesticks",   # interval: 1min
+            "trade": "spot.trades",
+            "ticker": "spot.tickers",
+        }
+
     def init_symbol(self, symbol: str):
         new_symbol = symbol.upper()
         self.symbol_mapping[new_symbol] = symbol
         return new_symbol
 
-    async def subscribe_depth(self, item: ToSub, depth: int = 5):
-        action = "subscribe" if item.status else "unsubscribe"
-        await self.send_packet({
-            "time": int(MyDatetime.timestamp()),
-            "channel": "spot.order_book",
-            "event": action,
-            "payload": [
-                self.init_symbol(item.symbol), str(depth), "1000ms",
-            ]
-        })
-        del action
-
-    async def subscribe_kline(self, item: ToSub, interval: str = "1m"):
-        action = "subscribe" if item.status else "unsubscribe"
-        await self.send_packet({
-            "time": int(MyDatetime.timestamp()),
-            "channel": "spot.candlesticks",
-            "event": action,
-            "payload": [
-                interval, self.init_symbol(item.symbol)
-            ]
-        })
-        del action
-
-    async def subscribe_ticker(self, item: ToSub):
-        action = "subscribe" if item.status else "unsubscribe"
-        await self.send_packet({
-            "time": int(MyDatetime.timestamp()),
-            "channel": "spot.tickers",
-            "event": action,
-            "payload": [
-                self.init_symbol(item.symbol)
-            ]
-        })
-        del action
+    async def subscribe_by_channel(self, channel: str, item: ToSub):
+        msg = {
+            "time": int(self.MDT.timestamp()),
+            "channel": self.channel_map[channel],
+            "event": "subscribe" if item.status else "unsubscribe",
+            "payload": []
+        }
+        if channel == "depth":
+            msg["payload"] = [self.init_symbol(item.symbol), "5", "1000ms"]
+        elif channel == "kline":
+            msg["payload"] = ["1m", self.init_symbol(item.symbol)]
+        elif channel == "trade":
+            msg["payload"] = [self.init_symbol(item.symbol)]
+        elif channel == "ticker":
+            msg["payload"] = [self.init_symbol(item.symbol)]
+        else:
+            return
+        await self.send_packet(msg)
+        del msg
 
     async def on_packet(self, data: dict):
         event: str = data.get("event", "")
@@ -75,6 +65,8 @@ class GateWssPublic(WssTemplate):
                 self.loop.create_task(self.on_depth(data))
             elif channel == "spot.candlesticks":
                 self.loop.create_task(self.on_kline(data))
+            elif channel == "spot.trades":
+                self.loop.create_task(self.on_trade(data))
             elif channel == "spot.tickers":
                 self.loop.create_task(self.on_ticker(data))
             del channel
@@ -125,6 +117,7 @@ class GateWssPublic(WssTemplate):
                     volume=float(kline["v"]),
                     amount=float(kline["a"]),
                     num=-1,
+                    timestamp=int["t"] * 1000
                 )._asdict()
             }
         except Exception as e:
@@ -133,6 +126,28 @@ class GateWssPublic(WssTemplate):
             del symbol
         finally:
             del kline
+
+    async def on_trade(self, data: dict):
+        try:
+            trade: dict = data.get("result", {})
+            if not trade:
+                return
+            symbol: str = self.symbol_mapping[trade["currency_pair"]].upper()
+            self.symbol_last_trade[symbol] = {
+                "trade": Trade(
+                    amount=float(trade["amount"]),
+                    price=float(trade["price"]),
+                    volume=float(trade["amount"]) * float(trade["price"]),
+                    direction=trade["side"].lower(),
+                    timestamp=int(float(trade["create_time_ms"])),
+                )
+            }
+        except Exception as e:
+            log.warning(f"trade err: {e}, data: {data}")
+        else:
+            del symbol
+        finally:
+            del trade
 
     async def on_ticker(self, data: dict):
         try:
@@ -164,7 +179,7 @@ class GateWssPublic(WssTemplate):
         while True:
             try:
                 if self.is_connected:
-                    await self.send_packet({"time": int(MyDatetime.timestamp()), "channel": "spot.ping"})
+                    await self.send_packet({"time": int(self.MDT.timestamp()), "channel": "spot.ping"})
             except Exception as e:
                 log.warning(f"on_ping, err: {e}")
             finally:

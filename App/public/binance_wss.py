@@ -7,7 +7,7 @@ sys.path.append("/root/WssMiddleware")
 
 from loguru import logger as log
 
-from Objects import Depth, KLine, Ticker
+from Objects import Depth, KLine, Trade, Ticker
 from Constants import Hosts
 from Templates import WssTemplate, ToSub
 
@@ -21,43 +21,41 @@ class BinanceWssPublic(WssTemplate):
         self.url: str = Hosts.BINANCE.data_wss
         self.exchange: str = "binance"
 
+        self.channel_map: dict = {
+            "depth": "{symbol}@depth{depth}@1000ms",    # depth: 5
+            "kline": "{symbol}@kline_{interval}",       # interval: 1m
+            "trade": "{symbol}@trade",
+            "ticker": "{symbol}@ticker",
+        }
+
     def init_symbol(self, symbol: str):
         new_symbol = symbol.replace("_", "").lower()
         self.symbol_mapping[new_symbol] = symbol
         return new_symbol
 
-    async def subscribe_depth(self, item: ToSub, depth: int = 5):
-        action = "SUBSCRIBE" if item.status else "UNSUBSCRIBE"
-        await self.send_packet({
-            "method": action,
-            "params": [
-                f"{self.init_symbol(item.symbol)}@depth{depth}@1000ms"
-            ],
-            "id": item.id
-        })
-        del action
-
-    async def subscribe_kline(self, item: ToSub, interval: str = "1m"):
-        action = "SUBSCRIBE" if item.status else "UNSUBSCRIBE"
-        await self.send_packet({
-            "method": action,
-            "params": [
-                f"{self.init_symbol(item.symbol)}@kline_{interval}"
-            ],
-            "id": item.id + 10000
-        })
-        del action
-
-    async def subscribe_ticker(self, item: ToSub):
-        action = "SUBSCRIBE" if item.status else "UNSUBSCRIBE"
-        await self.send_packet({
-            "method": action,
-            "params": [
-                f"{self.init_symbol(item.symbol)}@ticker"
-            ],
-            "id": item.id + 20000
-        })
-        del action
+    async def subscribe_by_channel(self, channel: str, item: ToSub):
+        msg: dict = {
+            "method": "SUBSCRIBE" if item.status else "UNSUBSCRIBE",
+            "params": [],
+            "id": item.id,
+        }
+        param: str = self.channel_map["channel"]
+        if channel == "depth":
+            param = param.format(symbol=self.init_symbol(item.symbol), depth="5")
+        elif channel == "kline":
+            param = param.format(symbol=self.init_symbol(item.symbol), interval="1m")
+            msg["id"] += 10000
+        elif channel == "trade":
+            param = param.format(symbol=self.init_symbol(item.symbol))
+            msg["id"] += 20000
+        elif channel == "ticker":
+            param = param.format(symbol=self.init_symbol(item.symbol))
+            msg["id"] += 30000
+        else:
+            return
+        msg["params"].append(param)
+        await self.send_packet(msg)
+        del msg, param
 
     async def on_packet(self, data: dict):
         if "id" in data.keys():
@@ -66,6 +64,8 @@ class BinanceWssPublic(WssTemplate):
             self.loop.create_task(self.on_depth(data))
         elif "kline" in data["stream"]:
             self.loop.create_task(self.on_kline(data))
+        elif "trade" in data["stream"]:
+            self.loop.create_task(self.on_trade(data))
         elif "ticker" in data["stream"]:
             self.loop.create_task(self.on_ticker(data))
 
@@ -92,7 +92,6 @@ class BinanceWssPublic(WssTemplate):
                     "asks": {"price": float(ask[0]), "amount": float(ask[1])},
                 }
             }
-            # await self.redis_conn.hset(name=f"EXCHANGE-SPOT-WSS-DEPTH-{symbol}", key=self.exchange, value=res)
         except Exception as e:
             log.warning(f"depth err: {e}, data: {data}")
         else:
@@ -115,13 +114,33 @@ class BinanceWssPublic(WssTemplate):
                     volume=float(kline["v"]),
                     amount=float(kline["q"]),
                     num=float(kline["n"]),
+                    timestamp=kline["t"]
                 )._asdict()
             }
-            # await self.redis_conn.hset(name=f"EXCHANGE-SPOT-WSS-KLINE-{symbol}", key=self.exchange, value=res)
         except Exception as e:
             log.warning(f"kline err: {e}, data: {data}")
         finally:
             del symbol, kline
+
+    async def on_trade(self, data: dict):
+        try:
+            symbol: str = self.symbol_mapping[data["stream"].split("@")[0].lower()].upper()
+            trade: dict = data.get("data", {})
+            if not trade:
+                return
+            self.symbol_last_trade[symbol] = {
+                "trade": Trade(
+                    amount=float(trade["q"]),
+                    price=float(trade["p"]),
+                    volume=float(trade["q"]) * float(trade["p"]),
+                    direction="sell" if trade["m"] else "buy",
+                    timestamp=trade["T"]
+                )._asdict()
+            }
+        except Exception as e:
+            log.warning(f"trade err: {e}, data: {data}")
+        finally:
+            del symbol, trade
 
     async def on_ticker(self, data: dict):
         try:
@@ -139,7 +158,6 @@ class BinanceWssPublic(WssTemplate):
                     timestamp=int(ticker["E"])
                 )._asdict()
             }
-            # await self.redis_conn.hset(name=f"EXCHANGE-SPOT-WSS-TICKER-{symbol}", key=self.exchange, value=res)
         except Exception as e:
             log.warning(f"ticker err: {e}, data: {data}")
         finally:

@@ -9,9 +9,8 @@ from loguru import logger as log
 
 from asyncio import sleep
 
-from Objects import Depth, KLine, Ticker
+from Objects import Depth, KLine, Trade, Ticker
 from Constants import Hosts
-from Functools import MyDatetime
 from Templates import WssTemplate, ToSub
 
 
@@ -30,34 +29,25 @@ class LbkWssPublic(WssTemplate):
             "ticker": []
         }
 
-    async def subscribe_depth(self, item: ToSub, depth: int = 5):
-        action = "subscribe" if item.status else "unsubscribe"
-        await self.send_packet({
-            "action": action,
-            "subscribe": "depth",
-            "depth": str(depth),
-            "pair": item.symbol.lower()
-        })
-        del action
+        self.channel_map: dict = {
+            "depth": "depth",       # depth: 5
+            "kline": "kbar",        # interval: 1min
+            "trade": "trade",
+            "ticker": "tick",
+        }
 
-    async def subscribe_kline(self, item: ToSub, interval: str = "1min"):
-        action = "subscribe" if item.status else "unsubscribe"
-        await self.send_packet({
-            "action": action,
-            "subscribe": "kbar",
-            "kbar": interval,
+    async def subscribe_by_channel(self, channel: str, item: ToSub):
+        msg: dict = {
+            "action": "subscribe" if item.status else "unsubscribe",
+            "subscribe": self.channel_map[channel],
             "pair": item.symbol.lower()
-        })
-        del action
-
-    async def subscribe_ticker(self, item: ToSub):
-        action = "subscribe" if item.status else "unsubscribe"
-        await self.send_packet({
-            "action": action,
-            "subscribe": "tick",
-            "pair": item.symbol.lower()
-        })
-        del action
+        }
+        if channel == "depth":
+            msg["depth"] = "5"
+        elif channel == "kline":
+            msg["kbar"] = "1min"
+        await self.send_packet(msg)
+        del msg
 
     async def on_packet(self, data: dict):
         if data.get("action", None) == "ping":
@@ -69,6 +59,8 @@ class LbkWssPublic(WssTemplate):
             self.loop.create_task(self.on_depth(data))
         elif _type == "kbar":
             self.loop.create_task(self.on_kline(data))
+        elif _type == "trade":
+            self.loop.create_task(self.on_trade(data))
         elif _type == "tick":
             self.loop.create_task(self.on_ticker(data))
         else:
@@ -81,21 +73,24 @@ class LbkWssPublic(WssTemplate):
             log.warning(f"subscribe, symbol: {symbol}, err: {data}")
             item: ToSub = self.to_subscribe[symbol]
             if "depth" in item.business:
-                # self.err_dict["depth"].append(symbol)
                 try:
                     self.current_subscribe_depth.remove(symbol)
                 except ValueError:
                     pass
                 log.info(f"on_check, depth, 重新订阅异常币对: {symbol}")
             if "kline" in item.business:
-                # self.err_dict["kline"].append(symbol)
                 try:
                     self.current_subscribe_kline.remove(symbol)
                 except ValueError:
                     pass
                 log.info(f"on_check, kline, 重新订阅异常币对: {symbol}")
+            if "trade" in item.business:
+                try:
+                    self.current_subscribe_trade.remove(symbol)
+                except ValueError:
+                    pass
+                log.info(f"on_check, trade, 重新订阅异常币对: {symbol}")
             if "ticker" in item.business:
-                # self.err_dict["ticker"].append(symbol)
                 try:
                     self.current_subscribe_ticker.remove(symbol)
                 except ValueError:
@@ -164,12 +159,33 @@ class LbkWssPublic(WssTemplate):
                     volume=float(kline["v"]),
                     amount=float(kline["a"]),
                     num=float(kline["n"]),
+                    timestamp=self.MDT.dt2ts(dt=self.MDT.utc2dt(kline["t"]), thousand=True)
                 )._asdict()
             }
         except Exception as e:
             log.warning(f"kline err: {e}, data: {data}")
         finally:
             del symbol, kline
+
+    async def on_trade(self, data: dict):
+        try:
+            symbol: str = data.get("pair", "").lower()
+            trade: dict = data.get("trade", {})
+            if not trade:
+                return
+            self.symbol_last_trade[symbol] = {
+                "trade": Trade(
+                    amount=float(trade["amount"]),
+                    price=float(trade["price"]),
+                    volume=float(trade["volumePrice"]),
+                    direction=trade["direction"].lower(),
+                    timestamp=self.MDT.dt2ts(dt=self.MDT.utc2dt(trade["TS"]), thousand=True)
+                )._asdict()
+            }
+        except Exception as e:
+            log.warning(f"trade err: {e}, data: {data}")
+        finally:
+            del symbol, trade
 
     async def on_ticker(self, data: dict):
         try:
@@ -184,7 +200,7 @@ class LbkWssPublic(WssTemplate):
                     volume=float(ticker["vol"]),
                     quote=float(ticker["turnover"]),
                     latest_price=float(ticker["latest"]),
-                    timestamp=MyDatetime.dt2ts(dt=MyDatetime.utc2dt(data["TS"]), thousand=True)
+                    timestamp=self.MDT.dt2ts(dt=self.MDT.utc2dt(data["TS"]), thousand=True)
                 )._asdict()
             }
         except Exception as e:
