@@ -7,6 +7,7 @@ sys.path.append("/root/WssMiddlewareV2")
 
 from loguru import logger as log
 
+from Functools import define
 from Objects import Depth, KLine, Trade, Ticker
 from Constants import Hosts
 from Templates import WssTemplate, ToSub
@@ -14,26 +15,27 @@ from Templates import WssTemplate, ToSub
 
 class OkexWssPublic(WssTemplate):
 
-    def __init__(self):
+    def __init__(self, channel: str):
         super().__init__()
 
         # constants
+        self.channel = channel.lower()
         self.url: str = Hosts.OKEX.data_wss
         self.exchange: str = "okex"
 
-        self.channel_map: dict = {
+        self.channel_4_sub: str = {
             "depth": "books{depth}",        # depth: 5
             "kline": "candle{interval}",    # interval: 1M
             "trade": "trades",
             "ticker": "tickers",
-        }
+        }[self.channel]
 
     def init_symbol(self, symbol: str):
         new_symbol = symbol.replace("_", "-").upper()
         self.symbol_mapping[new_symbol] = symbol
         return new_symbol
 
-    async def subscribe_by_channel(self, channel: str, item: ToSub):
+    async def subscribe_by_channel(self, item: ToSub):
         msg = {
             "op": "subscribe" if item.status else "unsubscribe",
             "args": [{
@@ -41,10 +43,10 @@ class OkexWssPublic(WssTemplate):
                 "instId": self.init_symbol(item.symbol)
             }],
         }
-        channel_string: str = self.channel_map[channel]
-        if channel == "depth":
+        channel_string: str = self.channel_4_sub
+        if self.channel == "depth":
             channel_string = channel_string.format(depth=5)
-        elif channel == "kline":
+        elif self.channel == "kline":
             channel_string = channel_string.format(interval="1M")
         msg["args"][0]["channel"] = channel_string
         await self.send_packet(msg)
@@ -79,7 +81,7 @@ class OkexWssPublic(WssTemplate):
                 return
             bid: list = depth.get("bids", [[0, 0, 0, 0]])[0]
             ask: list = depth.get("asks", [[0, 0, 0, 0]])[0]
-            self.symbol_last_depth[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "depth": {
                     # "bids": self._init4depth(depth.get("bids", [])),
                     # "asks": self._init4depth(depth.get("asks", [])),
@@ -100,7 +102,7 @@ class OkexWssPublic(WssTemplate):
             kline: list = data.get("data", [[]])[0]
             if not kline:
                 return
-            self.symbol_last_kline[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "kline": KLine(
                     open=float(kline[1]),
                     high=float(kline[2]),
@@ -123,7 +125,7 @@ class OkexWssPublic(WssTemplate):
             trade: dict = data.get("data", [{}])[0]
             if not trade:
                 return
-            self.symbol_last_trade[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "trade": Trade(
                     amount=float(trade["sz"]),
                     price=float(trade["px"]),
@@ -144,7 +146,7 @@ class OkexWssPublic(WssTemplate):
             ticker: dict = data.get("data", [{}])[0]
             if not ticker:
                 return
-            self.symbol_last_ticker[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "ticker": Ticker(
                     high=float(ticker["high24h"]),
                     low=float(ticker["low24h"]),
@@ -161,4 +163,5 @@ class OkexWssPublic(WssTemplate):
 
 
 if __name__ == "__main__":
-    OkexWssPublic().run()
+    cn = define(name="channel", default="depth", _type=str)
+    OkexWssPublic(channel=cn).run()

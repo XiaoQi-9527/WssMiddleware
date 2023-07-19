@@ -38,21 +38,15 @@ class WssTemplate(WebsocketClient):
         self.subscribe_cfg_model = SubscribeConfigModel()
 
         # constant
+        self.channel: str = ""
         self.type: str = "spot"
         self.url: str = ""
         self.exchange: str = ""
         self.to_subscribe: Dict[str, ToSub] = {}
         self.symbol_mapping: Dict[str, str] = {}  # 币对对照表
 
-        self.symbol_last_depth: dict = {}
-        self.symbol_last_kline: dict = {}
-        self.symbol_last_trade: dict = {}
-        self.symbol_last_ticker: dict = {}
-
-        self.current_subscribe_depth: list = []
-        self.current_subscribe_kline: list = []
-        self.current_subscribe_trade: list = []
-        self.current_subscribe_ticker: list = []
+        self.symbol_last_data: dict = {}
+        self.current_subscribe_symbol: list = []
 
     async def init_redis_conn(self):
         self.redis_conn = await self.redis_pool.open(db=self.redis_db)
@@ -65,16 +59,16 @@ class WssTemplate(WebsocketClient):
         val["update_dt"] = self.MDT.dt2str(dt)
         return val
 
-    def create_task_4_cache(self, conn, dt, task: str, data: dict):
-        if not data:
+    def create_task_4_cache(self, conn, dt):
+        if not self.symbol_last_data:
             return []
         return [
             conn.hset(
-                name=f"EXCHANGE-SPOT-WSS-{task}-{symbol}".upper(),
+                name=f"EXCHANGE-SPOT-WSS-{self.channel}-{symbol}".upper(),
                 key=self.exchange,
                 value=self.add_time(value, dt)
             )
-            for symbol, value in data.items()
+            for symbol, value in self.symbol_last_data.copy().items()
         ]
 
     async def on_cache(self):
@@ -84,12 +78,7 @@ class WssTemplate(WebsocketClient):
                 while True:
                     try:
                         dt = self.MDT.now()
-                        await gather(
-                            *self.create_task_4_cache(conn, dt, task="DEPTH", data=self.symbol_last_depth.copy()),
-                            *self.create_task_4_cache(conn, dt, task="KLINE", data=self.symbol_last_kline.copy()),
-                            *self.create_task_4_cache(conn, dt, task="TRADE", data=self.symbol_last_trade.copy()),
-                            *self.create_task_4_cache(conn, dt, task="TICKER", data=self.symbol_last_ticker.copy()),
-                        )
+                        await gather(*self.create_task_4_cache(conn, dt))
                     except Exception as e:
                         log.warning(f"set_value, err: {e}")
                         raise e
@@ -126,64 +115,45 @@ class WssTemplate(WebsocketClient):
         finally:
             pass
 
-    async def switch_task_by_channel(self, channel: str, current_sub: list, symbol: str, item: ToSub):
+    async def switch_task_by_channel(self, symbol: str, item: ToSub):
         if item.status:
-            if symbol not in current_sub:
-                await self.subscribe_by_channel(channel=channel, item=item)
-                current_sub.append(symbol)
-                log.info(f"current_sub_{channel}, id: {item.id}, symbol: {symbol}")
+            if symbol not in self.current_subscribe_symbol:
+                await self.subscribe_by_channel(item=item)
+                self.current_subscribe_symbol.append(symbol)
+                log.info(f"current_sub_{self.channel}, id: {item.id}, symbol: {symbol}")
                 await sleep(0.2)
         else:
-            if symbol in current_sub:
-                await self.subscribe_by_channel(channel, item)
-                current_sub.remove(symbol)
-                log.info(f"current_un_sub_{channel}, id: {item.id}, symbol: {symbol}")
+            if symbol in self.current_subscribe_symbol:
+                await self.subscribe_by_channel(item)
+                self.current_subscribe_symbol.remove(symbol)
+                log.info(f"current_un_sub_{self.channel}, id: {item.id}, symbol: {symbol}")
                 await sleep(0.2)
-        return current_sub
 
     async def on_task(self):
         try:
             await self.get_data_from_mysql()
             for symbol, item in self.to_subscribe.items():
                 try:
-                    if "depth" in item.business:
-                        self.current_subscribe_depth = await self.switch_task_by_channel(
-                            channel="depth", current_sub=self.current_subscribe_depth, symbol=symbol, item=item
-                        )
-                    if "kline" in item.business:
-                        self.current_subscribe_kline = await self.switch_task_by_channel(
-                            channel="kline", current_sub=self.current_subscribe_kline, symbol=symbol, item=item
-                        )
-                    if "trade" in item.business:
-                        self.current_subscribe_trade = await self.switch_task_by_channel(
-                            channel="trade", current_sub=self.current_subscribe_trade, symbol=symbol, item=item
-                        )
-                    if "ticker" in item.business:
-                        self.current_subscribe_ticker = await self.switch_task_by_channel(
-                            channel="ticker", current_sub=self.current_subscribe_ticker, symbol=symbol, item=item
-                        )
+                    if self.channel in item.business:
+                        await self.switch_task_by_channel(symbol=symbol, item=item)
                 except Exception as e:
                     log.warning(f"订阅处理, symbol: {symbol}, err: {e}")
+                finally:
+                    await sleep(0.2)
         except Exception as e:
             log.warning(f"on_task, err: {e}")
         else:
             log.info(f"on_task, ok")
         finally:
-            log.info(f"current_depth_length: {len(self.current_subscribe_depth)}")
-            log.info(f"current_kline_length: {len(self.current_subscribe_kline)}")
-            log.info(f"current_trade_length: {len(self.current_subscribe_trade)}")
-            log.info(f"current_ticker_length: {len(self.current_subscribe_ticker)}")
+            log.info(f"current_subscribe_{self.channel}_length: {len(self.current_subscribe_symbol)}")
 
-    async def subscribe_by_channel(self, channel: str, item: ToSub):
+    async def subscribe_by_channel(self, item: ToSub):
         raise NotImplementedError
 
     async def on_connected(self):
         await self.redis_conn.close()
         await self.init_redis_conn()
-        self.current_subscribe_depth = []
-        self.current_subscribe_kline = []
-        self.current_subscribe_trade = []
-        self.current_subscribe_ticker = []
+        self.current_subscribe_symbol = []
 
     async def on_first(self):
         await self.init_session()

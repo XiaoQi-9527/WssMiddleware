@@ -9,6 +9,7 @@ from loguru import logger as log
 
 from asyncio import sleep
 
+from Functools import define
 from Objects import Depth, KLine, Trade, Ticker
 from Constants import Hosts
 from Templates import WssTemplate, ToSub
@@ -16,35 +17,30 @@ from Templates import WssTemplate, ToSub
 
 class LbkWssPublic(WssTemplate):
 
-    def __init__(self):
+    def __init__(self, channel: str):
         super().__init__()
 
         # constants
+        self.channel = channel.lower()
         self.url: str = Hosts.LBK.data_wss
         self.exchange: str = "lbank"
 
-        self.err_dict: dict = {
-            "depth": [],
-            "kline": [],
-            "ticker": []
-        }
-
-        self.channel_map: dict = {
-            "depth": "depth",       # depth: 5
-            "kline": "kbar",        # interval: 1min
+        self.channel_4_sub: str = {
+            "depth": "depth",   # depth: 5
+            "kline": "kbar",    # interval: 1min
             "trade": "trade",
             "ticker": "tick",
-        }
+        }[self.channel]
 
-    async def subscribe_by_channel(self, channel: str, item: ToSub):
+    async def subscribe_by_channel(self, item: ToSub):
         msg: dict = {
             "action": "subscribe" if item.status else "unsubscribe",
-            "subscribe": self.channel_map[channel],
+            "subscribe": self.channel_4_sub,
             "pair": item.symbol.lower()
         }
-        if channel == "depth":
+        if self.channel == "depth":
             msg["depth"] = "5"
-        elif channel == "kline":
+        elif self.channel == "kline":
             msg["kbar"] = "1min"
         await self.send_packet(msg)
         del msg
@@ -72,30 +68,12 @@ class LbkWssPublic(WssTemplate):
             symbol = data.get("message", "").split(":")[-1].replace("[", "").replace("]", "")
             log.warning(f"subscribe, symbol: {symbol}, err: {data}")
             item: ToSub = self.to_subscribe[symbol]
-            if "depth" in item.business:
+            if self.channel in item.business:
                 try:
-                    self.current_subscribe_depth.remove(symbol)
+                    self.current_subscribe_symbol.remove(symbol)
                 except ValueError:
                     pass
-                log.info(f"on_check, depth, 重新订阅异常币对: {symbol}")
-            if "kline" in item.business:
-                try:
-                    self.current_subscribe_kline.remove(symbol)
-                except ValueError:
-                    pass
-                log.info(f"on_check, kline, 重新订阅异常币对: {symbol}")
-            if "trade" in item.business:
-                try:
-                    self.current_subscribe_trade.remove(symbol)
-                except ValueError:
-                    pass
-                log.info(f"on_check, trade, 重新订阅异常币对: {symbol}")
-            if "ticker" in item.business:
-                try:
-                    self.current_subscribe_ticker.remove(symbol)
-                except ValueError:
-                    pass
-                log.info(f"on_check, ticker, 重新订阅异常币对: {symbol}")
+                log.info(f"on_check, {self.channel}, 重新订阅异常币对: {symbol}")
         except Exception as e:
             log.warning(f"on_check, err: {e}")
         else:
@@ -129,7 +107,7 @@ class LbkWssPublic(WssTemplate):
                 return
             bid: list = depth.get("bids", [[0, 0]])[0]
             ask: list = depth.get("asks", [[0, 0]])[0]
-            self.symbol_last_depth[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "depth": {
                     # "bids": self._init4depth(depth.get("bids", [])),
                     # "asks": self._init4depth(depth.get("asks", [])),
@@ -150,7 +128,7 @@ class LbkWssPublic(WssTemplate):
             kline: dict = data.get("kbar", {})
             if not kline:
                 return
-            self.symbol_last_kline[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "kline": KLine(
                     open=float(kline["o"]),
                     high=float(kline["h"]),
@@ -173,7 +151,7 @@ class LbkWssPublic(WssTemplate):
             trade: dict = data.get("trade", {})
             if not trade:
                 return
-            self.symbol_last_trade[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "trade": Trade(
                     amount=float(trade["amount"]),
                     price=float(trade["price"]),
@@ -193,7 +171,7 @@ class LbkWssPublic(WssTemplate):
             ticker: dict = data.get("tick", {})
             if not ticker:
                 return
-            self.symbol_last_ticker[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "ticker": Ticker(
                     high=float(ticker["high"]),
                     low=float(ticker["low"]),
@@ -218,4 +196,5 @@ class LbkWssPublic(WssTemplate):
 
 
 if __name__ == "__main__":
-    LbkWssPublic().run()
+    cn = define(name="channel", default="depth", _type=str)
+    LbkWssPublic(channel=cn).run()

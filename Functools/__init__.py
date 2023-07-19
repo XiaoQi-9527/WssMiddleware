@@ -10,3 +10,5 @@ from .myDataclass import FreeDataclass, FrozenDataclass
 from .myRestClient import RestClient, Request
 from .mySubprocess import MyAioSubprocess
 from .myWebsocketClient import WebsocketClient
+
+from .mySysInput import define

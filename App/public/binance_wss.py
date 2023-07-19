@@ -7,6 +7,7 @@ sys.path.append("/root/WssMiddlewareV2")
 
 from loguru import logger as log
 
+from Functools import define
 from Objects import Depth, KLine, Trade, Ticker
 from Constants import Hosts
 from Templates import WssTemplate, ToSub
@@ -14,42 +15,42 @@ from Templates import WssTemplate, ToSub
 
 class BinanceWssPublic(WssTemplate):
 
-    def __init__(self):
+    def __init__(self, channel: str):
         super().__init__()
 
         # constants
+        self.channel = channel.lower()
         self.url: str = Hosts.BINANCE.data_wss
         self.exchange: str = "binance"
 
-        self.channel_map: dict = {
+        self.channel_4_sub: str = {
             "depth": "{symbol}@depth{depth}@1000ms",    # depth: 5
             "kline": "{symbol}@kline_{interval}",       # interval: 1m
             "trade": "{symbol}@trade",
             "ticker": "{symbol}@ticker",
-        }
+        }[self.channel]
 
     def init_symbol(self, symbol: str):
         new_symbol = symbol.replace("_", "").lower()
         self.symbol_mapping[new_symbol] = symbol
         return new_symbol
 
-    async def subscribe_by_channel(self, channel: str, item: ToSub):
+    async def subscribe_by_channel(self, item: ToSub):
         msg: dict = {
             "method": "SUBSCRIBE" if item.status else "UNSUBSCRIBE",
             "params": [],
             "id": item.id,
         }
-        param: str = self.channel_map[channel]
-        if channel == "depth":
-            param = param.format(symbol=self.init_symbol(item.symbol), depth="5")
-        elif channel == "kline":
-            param = param.format(symbol=self.init_symbol(item.symbol), interval="1m")
+        if self.channel == "depth":
+            param = self.channel_4_sub.format(symbol=self.init_symbol(item.symbol), depth="5")
+        elif self.channel == "kline":
+            param = self.channel_4_sub.format(symbol=self.init_symbol(item.symbol), interval="1m")
             msg["id"] += 10000
-        elif channel == "trade":
-            param = param.format(symbol=self.init_symbol(item.symbol))
+        elif self.channel == "trade":
+            param = self.channel_4_sub.format(symbol=self.init_symbol(item.symbol))
             msg["id"] += 20000
-        elif channel == "ticker":
-            param = param.format(symbol=self.init_symbol(item.symbol))
+        elif self.channel == "ticker":
+            param = self.channel_4_sub.format(symbol=self.init_symbol(item.symbol))
             msg["id"] += 30000
         else:
             return
@@ -84,7 +85,7 @@ class BinanceWssPublic(WssTemplate):
                 return
             bid: list = depth.get("bids", [[0, 0]])[0]
             ask: list = depth.get("asks", [[0, 0]])[0]
-            self.symbol_last_depth[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "depth": {
                     # "bids": self._init4depth(depth.get("bids", [])),
                     # "asks": self._init4depth(depth.get("asks", [])),
@@ -105,7 +106,7 @@ class BinanceWssPublic(WssTemplate):
             kline: dict = data.get("data", {}).get("k", {})
             if not kline:
                 return
-            self.symbol_last_kline[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "kline": KLine(
                     open=float(kline["o"]),
                     high=float(kline["h"]),
@@ -128,7 +129,7 @@ class BinanceWssPublic(WssTemplate):
             trade: dict = data.get("data", {})
             if not trade:
                 return
-            self.symbol_last_trade[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "trade": Trade(
                     amount=float(trade["q"]),
                     price=float(trade["p"]),
@@ -148,7 +149,7 @@ class BinanceWssPublic(WssTemplate):
             ticker: dict = data.get("data", {})
             if not ticker:
                 return
-            self.symbol_last_ticker[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "ticker": Ticker(
                     high=float(ticker["h"]),
                     low=float(ticker["l"]),
@@ -165,4 +166,5 @@ class BinanceWssPublic(WssTemplate):
 
 
 if __name__ == "__main__":
-    BinanceWssPublic().run()
+    cn = define(name="channel", default="depth", _type=str)
+    BinanceWssPublic(channel=cn).run()

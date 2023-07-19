@@ -9,6 +9,7 @@ from loguru import logger as log
 
 from asyncio import sleep
 
+from Functools import define
 from Objects import Depth, KLine, Trade, Ticker
 from Constants import Hosts
 from Templates import WssTemplate, ToSub
@@ -16,39 +17,40 @@ from Templates import WssTemplate, ToSub
 
 class GateWssPublic(WssTemplate):
 
-    def __init__(self):
+    def __init__(self, channel: str):
         super().__init__()
 
         # constants
+        self.channel = channel.lower()
         self.url: str = Hosts.GATE.data_wss
         self.exchange: str = "gate"
 
-        self.channel_map: dict = {
+        self.channel_4_sub: str = {
             "depth": "spot.order_book",     # depth: 5
             "kline": "spot.candlesticks",   # interval: 1min
             "trade": "spot.trades",
             "ticker": "spot.tickers",
-        }
+        }[self.channel]
 
     def init_symbol(self, symbol: str):
         new_symbol = symbol.upper()
         self.symbol_mapping[new_symbol] = symbol
         return new_symbol
 
-    async def subscribe_by_channel(self, channel: str, item: ToSub):
+    async def subscribe_by_channel(self, item: ToSub):
         msg = {
             "time": int(self.MDT.timestamp()),
-            "channel": self.channel_map[channel],
+            "channel": self.channel_4_sub,
             "event": "subscribe" if item.status else "unsubscribe",
             "payload": []
         }
-        if channel == "depth":
+        if self.channel == "depth":
             msg["payload"] = [self.init_symbol(item.symbol), "5", "1000ms"]
-        elif channel == "kline":
+        elif self.channel == "kline":
             msg["payload"] = ["1m", self.init_symbol(item.symbol)]
-        elif channel == "trade":
+        elif self.channel == "trade":
             msg["payload"] = [self.init_symbol(item.symbol)]
-        elif channel == "ticker":
+        elif self.channel == "ticker":
             msg["payload"] = [self.init_symbol(item.symbol)]
         else:
             return
@@ -87,7 +89,7 @@ class GateWssPublic(WssTemplate):
             symbol: str = self.symbol_mapping[depth["s"].upper()].upper()
             bid: list = depth.get("bids", [[0, 0]])[0]
             ask: list = depth.get("asks", [[0, 0]])[0]
-            self.symbol_last_depth[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "depth": {
                     # "bids": self._init4depth(depth.get("bids", [])),
                     # "asks": self._init4depth(depth.get("asks", [])),
@@ -108,7 +110,7 @@ class GateWssPublic(WssTemplate):
             if not kline:
                 return
             symbol: str = self.symbol_mapping["_".join(kline["n"].split("_")[1:]).upper()].upper()
-            self.symbol_last_kline[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "kline": KLine(
                     open=float(kline["o"]),
                     high=float(kline["h"]),
@@ -133,7 +135,7 @@ class GateWssPublic(WssTemplate):
             if not trade:
                 return
             symbol: str = self.symbol_mapping[trade["currency_pair"].upper()].upper()
-            self.symbol_last_trade[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "trade": Trade(
                     amount=float(trade["amount"]),
                     price=float(trade["price"]),
@@ -155,7 +157,7 @@ class GateWssPublic(WssTemplate):
             if not ticker:
                 return
             symbol: str = self.symbol_mapping[ticker["currency_pair"].upper()].upper()
-            self.symbol_last_ticker[symbol] = {
+            self.symbol_last_data[symbol] = {
                 "ticker": Ticker(
                     high=float(ticker["high_24h"]),
                     low=float(ticker["low_24h"]),
@@ -195,4 +197,5 @@ class GateWssPublic(WssTemplate):
 
 
 if __name__ == "__main__":
-    GateWssPublic().run()
+    cn = define(name="channel", default="depth", _type=str)
+    GateWssPublic(channel=cn).run()
