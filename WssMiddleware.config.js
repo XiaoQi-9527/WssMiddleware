@@ -1,6 +1,7 @@
 const base = {
     cwd: "/root/WssMiddlewareV2/",
-    interpreter: "/root/anaconda3/envs/CexMM/bin/python",
+    // interpreter: "/root/anaconda3/envs/CexMM/bin/python",
+    interpreter: "/root/miniconda3/envs/CexMM/bin/python",
     namespace: "SpotWssV2",
     instances: 1,
     autorestart: true,
