@@ -3,7 +3,7 @@
 # @Date: 2023.06.14 21:25
 
 import sys
-sys.path.append("/root/WssMiddleware")
+sys.path.append("/root/WssMiddlewareV2")
 
 from loguru import logger as log
 
@@ -177,7 +177,7 @@ class LbkWssPublic(WssTemplate):
                 "trade": Trade(
                     amount=float(trade["amount"]),
                     price=float(trade["price"]),
-                    volume=float(trade["volumePrice"]),
+                    volume=float(trade["volume"]),
                     direction=trade["direction"].lower(),
                     timestamp=self.MDT.dt2ts(dt=self.MDT.utc2dt(trade["TS"]), thousand=True)
                 )._asdict()

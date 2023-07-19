@@ -3,7 +3,7 @@
 # @Date: 2023/6/14 18:37
 
 import sys
-sys.path.append("/root/WssMiddleware")
+sys.path.append("/root/WssMiddlewareV2")
 
 from loguru import logger as log
 
@@ -39,7 +39,7 @@ class BinanceWssPublic(WssTemplate):
             "params": [],
             "id": item.id,
         }
-        param: str = self.channel_map["channel"]
+        param: str = self.channel_map[channel]
         if channel == "depth":
             param = param.format(symbol=self.init_symbol(item.symbol), depth="5")
         elif channel == "kline":

@@ -3,7 +3,7 @@
 # @Date: 2023.06.14 21:25
 
 import sys
-sys.path.append("/root/WssMiddleware")
+sys.path.append("/root/WssMiddlewareV2")
 
 from loguru import logger as log
 
@@ -137,6 +137,7 @@ class OkexWssPublic(WssTemplate):
         finally:
             del symbol, trade
 
+    #         WAVES_USDT
     async def on_ticker(self, data: dict):
         try:
             symbol: str = self.symbol_mapping[data.get("arg", {}).get("instId", "").upper()]

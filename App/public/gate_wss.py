@@ -3,7 +3,7 @@
 # @Date: 2023.06.14 21:12
 
 import sys
-sys.path.append("/root/WssMiddleware")
+sys.path.append("/root/WssMiddlewareV2")
 
 from loguru import logger as log
 
@@ -84,7 +84,7 @@ class GateWssPublic(WssTemplate):
             depth: dict = data.get("result", {})
             if not depth:
                 return
-            symbol: str = self.symbol_mapping[depth["s"]].upper()
+            symbol: str = self.symbol_mapping[depth["s"].upper()].upper()
             bid: list = depth.get("bids", [[0, 0]])[0]
             ask: list = depth.get("asks", [[0, 0]])[0]
             self.symbol_last_depth[symbol] = {
@@ -107,7 +107,7 @@ class GateWssPublic(WssTemplate):
             kline: dict = data.get("result", {})
             if not kline:
                 return
-            symbol: str = self.symbol_mapping["_".join(kline["n"].split("_")[1:]).lower()].upper()
+            symbol: str = self.symbol_mapping["_".join(kline["n"].split("_")[1:]).upper()].upper()
             self.symbol_last_kline[symbol] = {
                 "kline": KLine(
                     open=float(kline["o"]),
@@ -117,7 +117,7 @@ class GateWssPublic(WssTemplate):
                     volume=float(kline["v"]),
                     amount=float(kline["a"]),
                     num=-1,
-                    timestamp=int["t"] * 1000
+                    timestamp=int(kline["t"]) * 1000
                 )._asdict()
             }
         except Exception as e:
@@ -132,7 +132,7 @@ class GateWssPublic(WssTemplate):
             trade: dict = data.get("result", {})
             if not trade:
                 return
-            symbol: str = self.symbol_mapping[trade["currency_pair"]].upper()
+            symbol: str = self.symbol_mapping[trade["currency_pair"].upper()].upper()
             self.symbol_last_trade[symbol] = {
                 "trade": Trade(
                     amount=float(trade["amount"]),
@@ -140,7 +140,7 @@ class GateWssPublic(WssTemplate):
                     volume=float(trade["amount"]) * float(trade["price"]),
                     direction=trade["side"].lower(),
                     timestamp=int(float(trade["create_time_ms"])),
-                )
+                )._asdict()
             }
         except Exception as e:
             log.warning(f"trade err: {e}, data: {data}")
@@ -154,7 +154,7 @@ class GateWssPublic(WssTemplate):
             ticker: dict = data.get("result", {})
             if not ticker:
                 return
-            symbol: str = self.symbol_mapping[ticker["currency_pair"]].upper()
+            symbol: str = self.symbol_mapping[ticker["currency_pair"].upper()].upper()
             self.symbol_last_ticker[symbol] = {
                 "ticker": Ticker(
                     high=float(ticker["high_24h"]),

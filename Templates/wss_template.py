@@ -3,7 +3,7 @@
 # @Date: 2023/6/14 18:32
 
 from loguru import logger as log
-from typing import Dict, List
+from typing import Dict
 
 from uvloop import EventLoopPolicy
 from asyncio import set_event_loop_policy, get_event_loop, sleep, gather

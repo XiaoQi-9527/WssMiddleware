@@ -3,7 +3,7 @@
 # @Date: 2023/6/15 12:04
 
 import sys
-sys.path.append("/root/WssMiddleware")
+sys.path.append("/root/WssMiddlewareV2")
 
 from peewee import CharField, BooleanField, DateTimeField, SQL
 
